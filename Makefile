@@ -7,7 +7,7 @@ LFLAGS=
 SRC_DIR=src/
 BUILD_DIR=build/
 CAMPANARO_BIN = Campanaro
-CAMPANARO_SRC = Campanaro.c
+CAMPANARO_SRC = *.c
 $LIBS=
 
 all:	Campanaro
