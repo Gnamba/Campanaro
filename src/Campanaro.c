@@ -26,17 +26,26 @@
 #include <errno.h>
 #include <signal.h>
 #include <string.h>
+#include <resolv.h>
+
 
 #include "BellManager.h"
+#include "GlueSocket.h"
+#include "ToolManager.h"
 
-int checkoperativeMode(void);
-void ManualManager(void);
+int checkoperativeMode(const void *data, int len,int fd);
+
 void ConfInit(void);
 
 void daemonize();
 void signal_handler(int);
 
 struct BellConfigurationSt BellConf;
+
+/* global gpio hnd*/
+struct BellHnd Bell;
+
+static int mode = 1;
 
 /*
  * This expects the new RTC class driver framework, working with
@@ -48,16 +57,22 @@ int main(int argc, char **argv)
 {
     int dev;
     int mode;
+    int length = 0;
+    char buf[2000];
+
+
 
     fprintf(stderr, "\n...Campanaro is started and run in background.");
 
     /*initialize daemonize process*/
-    daemonize();
+    //daemonize();
 
     dev = RTCinit();
 
-    IoInit();
+    IoInit(Bell);
     AlarmInit();
+
+    init_tool_socket();
 
     ConfInit();
 
@@ -66,18 +81,19 @@ int main(int argc, char **argv)
     /*main loop*/
     while (1)
     {
-        /* check on local file (different from conf.ini) written by external tool*/
-        /* il problema è che da qui ci passo solo ogni 1/4 d'ora mmmumblemumbele*/
-        mode = checkoperativeMode();
+        mode = checkoperativeMode(buf,length,dev);
+
+        printf("manual mode %u running\r\n",mode);
 
         switch (mode)
         {
         case 1:
-            BellManager(dev,BellConf);
+            BellManager(dev,BellConf,Bell);
             break;
 
         case 2:
-            ManualManager();
+            printf("manual mode running\r\n");
+            toolmng(buf,length,BellConf,Bell);
             break;
 
         }
@@ -86,16 +102,56 @@ int main(int argc, char **argv)
     return 0;
 }
 
-int checkoperativeMode()
+int checkoperativeMode(const void *data, int len,int fd)
 {
-    /* transitional function*/
-    return 1;
+    int received;
+    int retval;
+    int length = 0;
+    char *buf;
+
+    buf = (char*) data;
+
+    received = ListenSocket(buf, length);
+
+    if(received == 1)
+    {
+        /* start manual key*/
+        if(buf[0] == 0x22 && buf[1] == 0x22 && buf[2] == 0x22)
+        {
+            mode = 2;
+            log_message(LOG_FILE, "Manual mode Requested");
+
+            /* Disable periodic interrupt interrupts */
+            retval = ioctl(fd, RTC_PIE_OFF, 0);
+            if (retval == -1)
+            {
+                log_message(LOG_FILE, "RTC_PIE_OFF ioctl error");
+                perror("RTC_PIE_OFF ioctl");
+                exit(errno);
+            }
+
+            /* Disable Alarm interrupt interrupts */
+            retval = ioctl(fd, RTC_AIE_OFF, 0);
+            if (retval == -1)
+            {
+                log_message(LOG_FILE, "RTC_AIE_OFF ioctl error");
+                perror("RTC_AIE_OFF ioctl");
+                exit(errno);
+            }
+
+        }
+        /* stop manual key*/
+        else if(buf[0] == 0x33 && buf[1] == 0x33 && buf[2] == 0x33)
+        {
+            mode = 1;
+            log_message(LOG_FILE, "Automatic mode Requested");
+        }
+        length = len;
+    }
+
+    return mode;
 }
 
-void ManualManager()
-{
-    /* transitional function*/
-}
 
 void ConfInit()
 {
@@ -104,15 +160,74 @@ void ConfInit()
     BellConf.DisableBell = 0;
 
     BellConf.HalfEnable = 1;
-    BellConf.QuarterEnable = 1;
+    BellConf.QuarterEnable = 0;
     BellConf.HoursEnable = 1;
 
     BellConf.RingFrom = 6;
     BellConf.RingTo = 23;
 
-    BellConf.messa.tm_hour = 18;
-    BellConf.messa.tm_min = 00;
-    BellConf.messa.tm_sec = 00;
+    /* deley between ring*/
+    BellConf.DelayTime_0 = 1; /* delay in on - off  when ring Hours */
+    BellConf.DelayTime_1 = 30; /* delay in on - off  when ring Messa */
+    BellConf.DelayTime_2 = 30;  /* delay in on - off  when ring Cenno -15 */
+    BellConf.DelayTime_3 = 30; /* delay in on - off  when ring Cenno -30 */
+
+    /* lunedì */
+    BellConf.Day[1].nEvent = 2;
+
+    BellConf.Day[1].messa[0].tm_hour = 14;
+    BellConf.Day[1].messa[0].tm_min = 00;
+    BellConf.Day[1].messa[0].tm_sec = 00;
+
+    BellConf.Day[1].messa[1].tm_hour = 18;
+    BellConf.Day[1].messa[1].tm_min = 00;
+    BellConf.Day[1].messa[1].tm_sec = 00;
+
+    /* martedì */
+    BellConf.Day[2].nEvent = 2;
+
+    BellConf.Day[2].messa[0].tm_hour = 13;
+    BellConf.Day[2].messa[0].tm_min = 00;
+    BellConf.Day[2].messa[0].tm_sec = 00;
+
+    BellConf.Day[2].messa[1].tm_hour = 18;
+    BellConf.Day[2].messa[1].tm_min = 00;
+    BellConf.Day[2].messa[1].tm_sec = 00;
+
+    /* ven */
+    BellConf.Day[5].nEvent = 2;
+
+    BellConf.Day[5].messa[0].tm_hour = 13;
+    BellConf.Day[5].messa[0].tm_min = 00;
+    BellConf.Day[5].messa[0].tm_sec = 00;
+
+    BellConf.Day[5].messa[1].tm_hour = 18;
+    BellConf.Day[5].messa[1].tm_min = 00;
+    BellConf.Day[5].messa[1].tm_sec = 00;
+
+    /* Sab */
+    BellConf.Day[6].nEvent = 2;
+
+    BellConf.Day[6].messa[0].tm_hour = 18;
+    BellConf.Day[6].messa[0].tm_min = 00;
+    BellConf.Day[6].messa[0].tm_sec = 00;
+
+    BellConf.Day[6].messa[1].tm_hour =19 ;
+    BellConf.Day[6].messa[1].tm_min = 00;
+    BellConf.Day[6].messa[1].tm_sec = 00;
+
+    /* dom */
+    BellConf.Day[7].nEvent = 2;
+
+    BellConf.Day[7].messa[0].tm_hour = 10;
+    BellConf.Day[7].messa[0].tm_min = 30;
+    BellConf.Day[7].messa[0].tm_sec = 00;
+
+    BellConf.Day[7].messa[1].tm_hour = 17;
+    BellConf.Day[7].messa[1].tm_min = 00;
+    BellConf.Day[7].messa[1].tm_sec = 00;
+
+
 
 }
 

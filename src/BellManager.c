@@ -26,27 +26,23 @@ struct rtc_time rtc_tm;
 struct rtc_time ring_tm;
 const char *rtc = default_rtc;
 
+static uint alarm_checked = 0;
+
 /*Global Variable timer rtc */
 int i;
 int retval;
 int irqcount = 0;
 unsigned long data;
 
-/* Hw Bell ID linket to GPIO reference*/
-int IDBellHamH = -1 ;
-int IDBellHamHH = -1 ;
-int IDBellA = -1;
-int IDBellB = -1;
-
-void IoInit(void)
+void IoInit(struct BellHnd Bell)
 {
     /*initialize GPIO Bell*/
-    IDBellHamH = bindOutputChannel(7, 3);       //hummer hours
-    IDBellHamHH = bindOutputChannel(7, 5);      //hummer half hours
-    IDBellA = bindOutputChannel(7, 9);          //bell A
-    IDBellB = bindOutputChannel(7, 7);          //bell B
+    Bell.IDBellHamH = bindOutputChannel(7, 3);       //hummer hours
+    Bell.IDBellHamHH = bindOutputChannel(7, 5);      //hummer half hours
+    Bell.IDBellA = bindOutputChannel(7, 9);          //bell A
+    Bell.IDBellB = bindOutputChannel(7, 7);          //bell B
 
-    if ((IDBellHamH == -1) || (IDBellHamHH == -1) || (IDBellA == -1) || (IDBellB == -1))
+    if ((Bell.IDBellHamH == -1) || (Bell.IDBellHamHH == -1) || (Bell.IDBellA == -1) || (Bell.IDBellB == -1))
     {
         fprintf(stderr, "\nError: unable to access gpio resource. Exit.\n");
         exit(-1);
@@ -102,11 +98,13 @@ void AlarmInit(void)
     }
 }
 
-void BellManager(int fd, struct BellConfigurationSt BellConf)
+void BellManager(int fd, struct BellConfigurationSt BellConf, struct BellHnd Bell)
 {
+    int JustRing = 0;
+
     SetAlarm(fd);
 
-    log_message(LOG_FILE, "SetAlarm executed");
+    //log_message(LOG_FILE, "SetAlarm executed");
 
     /* Read the current alarm settings */
     retval = ioctl(fd, RTC_ALM_READ, &ring_tm);
@@ -120,14 +118,23 @@ void BellManager(int fd, struct BellConfigurationSt BellConf)
     fprintf(stderr, "Alarm time now set to %02d:%02d:%02d.\n", ring_tm.tm_hour,
             ring_tm.tm_min, ring_tm.tm_sec);
 
-    fprintf(stderr, "Waiting for alarm...");
+    fprintf(stderr, "Waiting for alarm...\r\n");
     fflush(stderr);
 
-    /* Enable alarm interrupts */
-    retval = ioctl(fd, RTC_AIE_ON, 0);
+//    /* Enable alarm interrupts */
+//    retval = ioctl(fd, RTC_AIE_ON, 0);
+//    if (retval == -1)
+//    {
+//        log_message(LOG_FILE, "RTC_AIE_ON ioctl error");
+//        perror("RTC_AIE_ON ioctl");
+//        exit(errno);
+//    }
+
+    /* Enable every second interrupts */
+    retval = ioctl(fd, RTC_PIE_ON, 0);
     if (retval == -1)
     {
-        log_message(LOG_FILE, "RTC_AIE_ON ioctl error");
+        log_message(LOG_FILE, "RTC_PIE_ON ioctl error");
         perror("RTC_AIE_ON ioctl");
         exit(errno);
     }
@@ -141,7 +148,7 @@ void BellManager(int fd, struct BellConfigurationSt BellConf)
         exit(errno);
     }
     irqcount++;
-    log_message(LOG_FILE, "okay! Alarm rang.");
+    //log_message(LOG_FILE, "okay! Alarm rang.");
 
     /* Read the RTC time/date */
     retval = ioctl(fd, RTC_RD_TIME, &rtc_tm);
@@ -151,9 +158,14 @@ void BellManager(int fd, struct BellConfigurationSt BellConf)
         perror("RTC_RD_TIME ioctl");
         exit(errno);
     }
+    /* reset alarm only whe the min 00 is passed*/
+    if(rtc_tm.tm_min != 00 && rtc_tm.tm_min != 15 && rtc_tm.tm_min != 30 && rtc_tm.tm_min != 45)
+    {
+        alarm_checked = 0;
+    }
 
     /*check alarm if it set*/
-    if ((rtc_tm.tm_min == 00))
+    if (rtc_tm.tm_min == 00 && alarm_checked == 0)
     {
         fprintf(stderr, "It's %02d:%02d:%02d. Ring From:%d to:%d enable:%d \n",
                 ring_tm.tm_hour,
@@ -162,21 +174,25 @@ void BellManager(int fd, struct BellConfigurationSt BellConf)
                 BellConf.RingFrom,BellConf.RingTo,
                 BellConf.HoursEnable);
 
+        JustRing = CheckMessa(rtc_tm,BellConf,Bell);
+
         /* check the No Sound Zone*/
         if(ring_tm.tm_hour >= BellConf.RingFrom && ring_tm.tm_hour <= BellConf.RingTo &&
-                BellConf.HoursEnable)
+                BellConf.HoursEnable && JustRing == 0)
         {
             for (i = 0;i< (ring_tm.tm_hour > 12 ?ring_tm.tm_hour - 12 : ring_tm.tm_hour); i++)
             {
                 /*play bells TODO support ring to 00h if necessary*/
-                playBell(&IDBellHamH, DLY);
+                playBell(&Bell.IDBellHamH, BellConf.DelayTime_0);
                 log_message(LOG_FILE, "Ora piena.");
             }
         }
+        /* */
+        alarm_checked =1;
         /*set next alarm*/
         ring_tm = setNextQuarterPastHourAlarm(rtc_tm);
     }
-    if ((rtc_tm.tm_min == 15))
+    if (rtc_tm.tm_min == 15 && alarm_checked == 0)
     {
         fprintf(stderr, "It's %02d:%02d:%02d. Ring From:%d to:%d enable:%d \n",
                 ring_tm.tm_hour,
@@ -185,18 +201,21 @@ void BellManager(int fd, struct BellConfigurationSt BellConf)
                 BellConf.RingFrom,BellConf.RingTo,
                 BellConf.QuarterEnable);
 
+        JustRing = CheckMessa(rtc_tm,BellConf,Bell);
+
         /* check the No Sound Zone*/
         if(ring_tm.tm_hour >= BellConf.RingFrom && ring_tm.tm_hour <= BellConf.RingTo &&
-                BellConf.QuarterEnable)
+                BellConf.QuarterEnable && JustRing == 0)
         {
             /*play bells*/
-            playBell(&IDBellHamHH, DLY);
+            playBell(&Bell.IDBellHamHH, BellConf.DelayTime_0);
             log_message(LOG_FILE, "Quarto d'ora.");
             /*set next alarm*/
         }
+        alarm_checked =1;
         ring_tm = setNextHalfHourAlarm(rtc_tm);
     }
-    if ((rtc_tm.tm_min == 30))
+    if (rtc_tm.tm_min == 30 && alarm_checked == 0)
     {
         fprintf(stderr, "It's %02d:%02d:%02d. Ring From:%d to:%d enable:%d \n",
                 ring_tm.tm_hour,
@@ -205,18 +224,21 @@ void BellManager(int fd, struct BellConfigurationSt BellConf)
                 BellConf.RingFrom,BellConf.RingTo,
                 BellConf.HalfEnable);
 
+        JustRing = CheckMessa(rtc_tm,BellConf,Bell);
+
         /* check the No Sound Zone*/
         if(ring_tm.tm_hour >= BellConf.RingFrom && ring_tm.tm_hour <= BellConf.RingTo &&
-                BellConf.HalfEnable)
+                BellConf.HalfEnable && JustRing == 0)
         {
             /*play bells*/
-            playBell(&IDBellHamHH, DLY);
+            playBell(&Bell.IDBellHamHH, BellConf.DelayTime_0);
             log_message(LOG_FILE, "Ora mezza.");
         }
+        alarm_checked =1;
         /*set next alarm*/
         ring_tm = setNextQuarterToHourAlarm(rtc_tm);
     }
-    if ((rtc_tm.tm_min == 45))
+    if (rtc_tm.tm_min == 45 && alarm_checked == 0)
     {
         fprintf(stderr, "It's %02d:%02d:%02d. Ring From:%d to:%d enable:%d \n",
                 ring_tm.tm_hour,
@@ -225,14 +247,17 @@ void BellManager(int fd, struct BellConfigurationSt BellConf)
                 BellConf.RingFrom,BellConf.RingTo,
                 BellConf.QuarterEnable);
 
+        JustRing = CheckMessa(rtc_tm,BellConf,Bell);
+
         /* check the No Sound Zone*/
         if(ring_tm.tm_hour >= BellConf.RingFrom && ring_tm.tm_hour <= BellConf.RingTo &&
-                BellConf.QuarterEnable)
+                BellConf.QuarterEnable && JustRing == 0)
         {
             /*play bells*/
-            playBell(&IDBellHamHH, DLY);
+            playBell(&Bell.IDBellHamHH, BellConf.DelayTime_0);
             log_message(LOG_FILE, "Quarto d'ora.");
         }
+        alarm_checked =1;
         /*set next alarm*/
         ring_tm = setNextHourAlarm(rtc_tm);
     }
@@ -240,6 +265,45 @@ void BellManager(int fd, struct BellConfigurationSt BellConf)
     UnSetAlarm(fd);
 }
 
+int CheckMessa(struct rtc_time Tempo,struct BellConfigurationSt BellConf,struct BellHnd Bell)
+{
+    int nday;
+    int JustRing;
+
+    nday = Tempo.tm_wday;
+    JustRing = 0;
+
+    printf("[checkmessa] giorno:%u -sono le %u:%u:%u \n",nday,Tempo.tm_hour,Tempo.tm_min,Tempo.tm_sec);
+    for(i=0; i < BellConf.Day[nday].nEvent; i++)
+    {
+        if(BellConf.Day[nday].messa[i].tm_hour == Tempo.tm_hour &&
+                BellConf.Day[nday].messa[i].tm_min == Tempo.tm_min)
+        {
+            playMessa(&Bell.IDBellA, &Bell.IDBellB, BellConf.DelayTime_1);
+            log_message(LOG_FILE, "Messa");
+            printf("[checkmessa] messa giorno:%u -sono le %u:%u:%u \n",nday,Tempo.tm_hour,Tempo.tm_min,Tempo.tm_sec);
+            JustRing = 1;
+        }
+        else if(BellConf.Day[nday].messa[i].tm_hour == Tempo.tm_hour &&
+                ((BellConf.Day[nday].messa[i].tm_min - 15) == Tempo.tm_min))
+        {
+            playMessaCenno(&Bell.IDBellB, BellConf.DelayTime_2);
+            log_message(LOG_FILE, "Messa in 15 min");
+            printf("[checkmessa] Messa in 15 min - giorno:%u -sono le %u:%u:%u \n",nday,Tempo.tm_hour,Tempo.tm_min,Tempo.tm_sec);
+            JustRing = 1;
+        }
+        else if(BellConf.Day[nday].messa[i].tm_hour == Tempo.tm_hour &&
+                ((BellConf.Day[nday].messa[i].tm_min - 30) == Tempo.tm_min))
+        {
+            playMessaCenno(&Bell.IDBellB, BellConf.DelayTime_3);
+            log_message(LOG_FILE, "Messa in 30 min");
+            printf("[checkmessa] Messa in 30 min - giorno:%u -sono le %u:%u:%u \n",nday,Tempo.tm_hour,Tempo.tm_min,Tempo.tm_sec);
+            JustRing = 1;
+        }
+    }
+
+    return JustRing;
+}
 
 void SetAlarm(int fd)
 {
@@ -263,7 +327,7 @@ void UnSetAlarm(int fd)
     int retval;
 
     /* Disable alarm interrupts */
-    retval = ioctl(fd, RTC_AIE_OFF, 0);
+    retval = ioctl(fd, RTC_PIE_ON, 0);
 
     if (retval == -1)
     {
@@ -321,6 +385,32 @@ void playBell(int* IDbell, unsigned char delay)
     printf("off \n");
     setChannelState(*IDbell, 0);
     sleep(1);
+}
+
+void playMessa(int* IDbell0, int* IDbell1, int duration)
+{
+    printf("on \n");
+    setChannelState(*IDbell0, 1);
+    setChannelState(*IDbell1, 1);
+
+    sleep(duration);
+
+    printf("off \n");
+    setChannelState(*IDbell0, 0);
+    setChannelState(*IDbell1, 0);
+
+}
+
+void playMessaCenno(int* IDbell, int duration)
+{
+    printf("on \n");
+    setChannelState(*IDbell, 1);
+
+    sleep(duration);
+
+    printf("off \n");
+    setChannelState(*IDbell, 0);
+
 }
 
 void log_message(char* filename, char* message)
