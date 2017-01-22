@@ -34,21 +34,6 @@ int retval;
 int irqcount = 0;
 unsigned long data;
 
-void IoInit(struct BellHnd Bell)
-{
-    /*initialize GPIO Bell*/
-    Bell.IDBellHamH = bindOutputChannel(7, 3);       //hummer hours
-    Bell.IDBellHamHH = bindOutputChannel(7, 5);      //hummer half hours
-    Bell.IDBellA = bindOutputChannel(7, 9);          //bell A
-    Bell.IDBellB = bindOutputChannel(7, 7);          //bell B
-
-    if ((Bell.IDBellHamH == -1) || (Bell.IDBellHamHH == -1) || (Bell.IDBellA == -1) || (Bell.IDBellB == -1))
-    {
-        fprintf(stderr, "\nError: unable to access gpio resource. Exit.\n");
-        exit(-1);
-    }
-}
-
 int  RTCinit(void)
 {
     int fd;
@@ -98,7 +83,7 @@ void AlarmInit(void)
     }
 }
 
-void BellManager(int fd, struct BellConfigurationSt BellConf, struct BellHnd Bell)
+void BellManager(int fd, struct BellConfigurationSt BellConf, struct BellHnd *Bell)
 {
     int JustRing = 0;
 
@@ -174,7 +159,7 @@ void BellManager(int fd, struct BellConfigurationSt BellConf, struct BellHnd Bel
                 BellConf.RingFrom,BellConf.RingTo,
                 BellConf.HoursEnable);
 
-        JustRing = CheckMessa(rtc_tm,BellConf,Bell);
+        JustRing = CheckMessa(&rtc_tm,BellConf,Bell);
 
         /* check the No Sound Zone*/
         if(ring_tm.tm_hour >= BellConf.RingFrom && ring_tm.tm_hour <= BellConf.RingTo &&
@@ -183,7 +168,7 @@ void BellManager(int fd, struct BellConfigurationSt BellConf, struct BellHnd Bel
             for (i = 0;i< (ring_tm.tm_hour > 12 ?ring_tm.tm_hour - 12 : ring_tm.tm_hour); i++)
             {
                 /*play bells TODO support ring to 00h if necessary*/
-                playBell(&Bell.IDBellHamH, BellConf.DelayTime_0);
+                playBell(Bell->IDBellHamH, BellConf.DelayTime_0);
                 log_message(LOG_FILE, "Ora piena.");
             }
         }
@@ -201,14 +186,14 @@ void BellManager(int fd, struct BellConfigurationSt BellConf, struct BellHnd Bel
                 BellConf.RingFrom,BellConf.RingTo,
                 BellConf.QuarterEnable);
 
-        JustRing = CheckMessa(rtc_tm,BellConf,Bell);
+        JustRing = CheckMessa(&rtc_tm,BellConf,Bell);
 
         /* check the No Sound Zone*/
         if(ring_tm.tm_hour >= BellConf.RingFrom && ring_tm.tm_hour <= BellConf.RingTo &&
                 BellConf.QuarterEnable && JustRing == 0)
         {
             /*play bells*/
-            playBell(&Bell.IDBellHamHH, BellConf.DelayTime_0);
+            playBell(Bell->IDBellHamHH, BellConf.DelayTime_0);
             log_message(LOG_FILE, "Quarto d'ora.");
             /*set next alarm*/
         }
@@ -224,14 +209,14 @@ void BellManager(int fd, struct BellConfigurationSt BellConf, struct BellHnd Bel
                 BellConf.RingFrom,BellConf.RingTo,
                 BellConf.HalfEnable);
 
-        JustRing = CheckMessa(rtc_tm,BellConf,Bell);
+        JustRing = CheckMessa(&rtc_tm,BellConf,Bell);
 
         /* check the No Sound Zone*/
         if(ring_tm.tm_hour >= BellConf.RingFrom && ring_tm.tm_hour <= BellConf.RingTo &&
                 BellConf.HalfEnable && JustRing == 0)
         {
             /*play bells*/
-            playBell(&Bell.IDBellHamHH, BellConf.DelayTime_0);
+            playBell(Bell->IDBellHamHH, BellConf.DelayTime_0);
             log_message(LOG_FILE, "Ora mezza.");
         }
         alarm_checked =1;
@@ -247,14 +232,14 @@ void BellManager(int fd, struct BellConfigurationSt BellConf, struct BellHnd Bel
                 BellConf.RingFrom,BellConf.RingTo,
                 BellConf.QuarterEnable);
 
-        JustRing = CheckMessa(rtc_tm,BellConf,Bell);
+        JustRing = CheckMessa(&rtc_tm,BellConf,Bell);
 
         /* check the No Sound Zone*/
         if(ring_tm.tm_hour >= BellConf.RingFrom && ring_tm.tm_hour <= BellConf.RingTo &&
                 BellConf.QuarterEnable && JustRing == 0)
         {
             /*play bells*/
-            playBell(&Bell.IDBellHamHH, BellConf.DelayTime_0);
+            playBell(Bell->IDBellHamHH, BellConf.DelayTime_0);
             log_message(LOG_FILE, "Quarto d'ora.");
         }
         alarm_checked =1;
@@ -265,41 +250,53 @@ void BellManager(int fd, struct BellConfigurationSt BellConf, struct BellHnd Bel
     UnSetAlarm(fd);
 }
 
-int CheckMessa(struct rtc_time Tempo,struct BellConfigurationSt BellConf,struct BellHnd Bell)
+int CheckMessa(struct rtc_time *Tempo,struct BellConfigurationSt BellConf,struct BellHnd *Bell)
 {
     int nday;
     int JustRing;
 
-    nday = Tempo.tm_wday;
+    nday = Tempo->tm_wday;
     JustRing = 0;
 
-    printf("[checkmessa] giorno:%u -sono le %u:%u:%u \n",nday,Tempo.tm_hour,Tempo.tm_min,Tempo.tm_sec);
+    printf("[checkmessa] giorno:%u -sono le %u:%u:%u \n",nday,Tempo->tm_hour,Tempo->tm_min,Tempo->tm_sec);
     for(i=0; i < BellConf.Day[nday].nEvent; i++)
     {
-        if(BellConf.Day[nday].messa[i].tm_hour == Tempo.tm_hour &&
-                BellConf.Day[nday].messa[i].tm_min == Tempo.tm_min)
+        // check MESSA - ora messa
+        if(BellConf.Day[nday].messa[i].tm_hour == Tempo->tm_hour &&
+                BellConf.Day[nday].messa[i].tm_min == Tempo->tm_min)
         {
-            playMessa(&Bell.IDBellA, &Bell.IDBellB, BellConf.DelayTime_1);
+            playMessa(Bell->IDBellA, BellConf.DelayTime_1);
             log_message(LOG_FILE, "Messa");
-            printf("[checkmessa] messa giorno:%u -sono le %u:%u:%u \n",nday,Tempo.tm_hour,Tempo.tm_min,Tempo.tm_sec);
+            printf("[checkmessa] messa giorno:%u -sono le %u:%u:%u \n",nday,Tempo->tm_hour,Tempo->tm_min,Tempo->tm_sec);
             JustRing = 1;
         }
-        else if(BellConf.Day[nday].messa[i].tm_hour == Tempo.tm_hour &&
-                ((BellConf.Day[nday].messa[i].tm_min - 15) == Tempo.tm_min))
+        // check CENNO - mezza ora prima della messa
+        else if((BellConf.Day[nday].messa[i].tm_hour == Tempo->tm_hour) &&
+                ((BellConf.Day[nday].messa[i].tm_min - 30) == Tempo->tm_min))
         {
-            playMessaCenno(&Bell.IDBellB, BellConf.DelayTime_2);
-            log_message(LOG_FILE, "Messa in 15 min");
-            printf("[checkmessa] Messa in 15 min - giorno:%u -sono le %u:%u:%u \n",nday,Tempo.tm_hour,Tempo.tm_min,Tempo.tm_sec);
+            playMessaCenno(Bell->IDBellA, BellConf.DelayTime_2);
+            log_message(LOG_FILE, "Messa in 30 min com messa alle ore mezze");
+            printf("[checkmessa] Messa in 30 min - giorno:%u -sono le %u:%u:%u \n",nday,Tempo->tm_hour,Tempo->tm_min,Tempo->tm_sec);
             JustRing = 1;
         }
-        else if(BellConf.Day[nday].messa[i].tm_hour == Tempo.tm_hour &&
-                ((BellConf.Day[nday].messa[i].tm_min - 30) == Tempo.tm_min))
+        else if((BellConf.Day[nday].messa[i].tm_hour - 1) == Tempo->tm_hour &&
+                ((BellConf.Day[nday].messa[i].tm_min + 30) == Tempo->tm_min))
         {
-            playMessaCenno(&Bell.IDBellB, BellConf.DelayTime_3);
-            log_message(LOG_FILE, "Messa in 30 min");
-            printf("[checkmessa] Messa in 30 min - giorno:%u -sono le %u:%u:%u \n",nday,Tempo.tm_hour,Tempo.tm_min,Tempo.tm_sec);
+            playMessaCenno(Bell->IDBellA, BellConf.DelayTime_2);
+            log_message(LOG_FILE, "Messa in 30 min com messa alle ore piene");
+            printf("[checkmessa] Messa in 30 min - giorno:%u -sono le %u:%u:%u \n",nday,Tempo->tm_hour,Tempo->tm_min,Tempo->tm_sec);
             JustRing = 1;
         }
+        // check DOPPIO - un ora prima della messa
+        else if(((BellConf.Day[nday].messa[i].tm_hour - 1) == Tempo->tm_hour) &&
+                ((BellConf.Day[nday].messa[i].tm_min) == Tempo->tm_min))
+        {
+            playMessaDoppio(Bell->IDBellA, Bell->IDBellB,BellConf.DelayTime_3);
+            log_message(LOG_FILE, "Messa in 60 min");
+            printf("[checkmessa] Messa in 60 min - giorno:%u -sono le %u:%u:%u \n",nday,Tempo->tm_hour,Tempo->tm_min,Tempo->tm_sec);
+            JustRing = 1;
+        }
+
     }
 
     return JustRing;
@@ -377,40 +374,73 @@ struct rtc_time setNextHourAlarm(struct rtc_time rtc_tm)
     return ring_tm;
 }
 
-void playBell(int* IDbell, unsigned char delay)
+void playBell(int *IDbell, int delay)
 {
-    printf("on \n");
-    setChannelState(*IDbell, 1);
-    sleep(delay);
+    printf("on IDbell:%u add_IDbell:%u\n",IDbell,&IDbell);
+    setChannelState(IDbell, 1);
+    usleep(delay);
     printf("off \n");
-    setChannelState(*IDbell, 0);
-    sleep(1);
+    setChannelState(IDbell, 0);
+    sleep(2);
 }
 
-void playMessa(int* IDbell0, int* IDbell1, int duration)
+
+void playMessa(int *IDbell, int duration)
 {
+    printf("Messa on IDbell:%u  add_IDbell:%u\n",IDbell,&IDbell);
     printf("on \n");
-    setChannelState(*IDbell0, 1);
-    setChannelState(*IDbell1, 1);
+    setChannelState(IDbell, 1);
 
     sleep(duration);
 
     printf("off \n");
-    setChannelState(*IDbell0, 0);
-    setChannelState(*IDbell1, 0);
+    setChannelState(IDbell, 0);
 
 }
 
-void playMessaCenno(int* IDbell, int duration)
+void playMessaDoppio(int *IDbell0, int* IDbell1, int duration)
 {
+    printf("doppio on IDbell0:%u IDbell1:%u  add_IDbell0:%u add_IDbell1:%u\n",IDbell0,IDbell1,&IDbell0,&IDbell1);
     printf("on \n");
-    setChannelState(*IDbell, 1);
+    setChannelState(IDbell0, 1);
+    setChannelState(IDbell1, 1);
 
     sleep(duration);
 
     printf("off \n");
-    setChannelState(*IDbell, 0);
+    setChannelState(IDbell0, 0);
+    setChannelState(IDbell1, 0);
 
+}
+
+void playMessaCenno(int *IDbell, int duration)
+{
+    printf("cenno on IDbell:%u  add_IDbell:%u\n",IDbell,&IDbell);
+    printf("on \n");
+    setChannelState(IDbell, 1);
+
+    sleep(duration);
+
+    printf("off \n");
+    setChannelState(IDbell, 0);
+
+}
+
+void IoInit(struct BellHnd *hnd)
+{
+    /*initialize GPIO Bell*/
+    hnd->IDBellHamH = bindOutputChannel(7, 5);       //hummer hours
+    hnd->IDBellHamHH = bindOutputChannel(7, 3);      //hummer half hours
+    hnd->IDBellA = bindOutputChannel(7, 9);          //bell A
+    hnd->IDBellB = bindOutputChannel(7, 7);          //bell B
+
+    fprintf(stderr,"[DEBUG] gpio mapping handler %u - %u - %u - %u \n\r",hnd->IDBellHamH,hnd->IDBellHamHH,hnd->IDBellA,hnd->IDBellB );
+
+    if ((hnd->IDBellHamH == -1) || (hnd->IDBellHamHH == -1) || (hnd->IDBellA == -1) || (hnd->IDBellB == -1))
+    {
+        fprintf(stderr, "\nError: unable to access gpio resource. Exit.\n");
+        exit(-1);
+    }
 }
 
 void log_message(char* filename, char* message)

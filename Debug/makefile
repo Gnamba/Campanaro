@@ -8,7 +8,6 @@ RM := rm -rf
 
 # All of the sources participating in the build are defined here
 -include sources.mk
--include x86_debug/src/subdir.mk
 -include src/SocketGlue/subdir.mk
 -include src/subdir.mk
 -include subdir.mk
@@ -31,13 +30,13 @@ all: Campanaro
 Campanaro: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: Cross GCC Linker'
-	arm-linux-gnueabi-gcc-4.7  -o "Campanaro" $(OBJS) $(USER_OBJS) $(LIBS)
+	gcc  -o "Campanaro" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) $(OBJS)$(C_DEPS)$(EXECUTABLES) Campanaro
+	-$(RM) $(EXECUTABLES)$(OBJS)$(C_DEPS) Campanaro
 	-@echo ' '
 
 .PHONY: all clean dependents

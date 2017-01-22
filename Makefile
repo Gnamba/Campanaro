@@ -8,16 +8,15 @@ SRC_DIR=src/
 BUILD_DIR=build/
 CAMPANARO_BIN = Campanaro
 CAMPANARO_SRC = *.c
+CAMPANARO_GLUE = */*.c
 $LIBS=
-INCLUDE=-I /src/SocketGlue
+INCLUDE=-I src/SocketGlue
 
 
-all:	Campanaro
+all:
+	${CC} $(INCLUDE) $(CFLAGS) $(LFLAGS) -o ${BUILD_DIR}${CAMPANARO_BIN} ${SRC_DIR}${CAMPANARO_SRC} ${SRC_DIR}${CAMPANARO_GLUE} $(LIBS)
 
-Campanaro:
-	${CC} $(INCLUDE) $(CFLAGS) $(LFLAGS) -o ${BUILD_DIR}${CAMPANARO_BIN} ${SRC_DIR}${CAMPANARO_SRC} $(LIBS)
-
-clean:       cleanbin
+clean:	cleanbin
 	rm -f ${BUILD_DIR}*.o  ${SRC_DIR}*~ 
 
 cleanbin:

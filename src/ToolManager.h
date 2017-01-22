@@ -8,6 +8,6 @@
 #ifndef SRC_TOOLMANAGER_H_
 #define SRC_TOOLMANAGER_H_
 
-void toolmng(const void *data, int len, struct BellConfigurationSt BellConf,struct BellHnd Bell);
+void toolmng(const void *data, int len, struct BellConfigurationSt BellConf,struct BellHnd *Bell);
 
 #endif /* SRC_TOOLMANAGER_H_ */

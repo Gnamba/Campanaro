@@ -19,9 +19,8 @@
 #include    "GlueSocket.h"
 #include    "BellManager.h"
 
-void toolmng(const void *data, int len, struct BellConfigurationSt BellConf, struct BellHnd Bell)
+void toolmng(char *data, int len, struct BellConfigurationSt BellConf, struct BellHnd *Bell)
 {
-    int i = 0;
     int index,msglen;
     char* buf;
     char outmsg[200];
@@ -29,8 +28,9 @@ void toolmng(const void *data, int len, struct BellConfigurationSt BellConf, str
     int Big_Bell = 0;
     int little_Hummer = 0;
     int Big_Hummer = 0;
+    int Carillon = 0;
 
-    buf = (char*) data;
+    buf = data;
 
     printf("received %u byte message\r\n",len);
 
@@ -60,7 +60,7 @@ void toolmng(const void *data, int len, struct BellConfigurationSt BellConf, str
         (void) sendto (tool.fd, outmsg, msglen, 0, (struct sockaddr *) &tool.dst, sizeof (tool.dst));
     }
 
-    else if((len == 6) && (buf[0] == 0x00) && (buf[1] == 0x05))
+    else if((len == 7) && (buf[0] == 0x44) && (buf[1] == 0x05))
     {
         printf("Bell command received \r\n");
         /* received output command*/
@@ -69,18 +69,33 @@ void toolmng(const void *data, int len, struct BellConfigurationSt BellConf, str
         Big_Bell        = buf[3];
         little_Hummer   = buf[4];
         Big_Hummer      = buf[5];
+        Carillon        = buf[6];
 
 
-        if((little_Hummer == 1 || Big_Hummer == 1 ) && (little_Bell != 1 || Big_Bell != 1 ))
+        if((little_Hummer != 1 && Big_Hummer == 1 ) && (little_Bell != 1 || Big_Bell != 1 ))
         {
-            playBell(&Bell.IDBellHamHH, BellConf.DelayTime_0);
-            playBell(&Bell.IDBellHamH, BellConf.DelayTime_0);
+            playBell(Bell->IDBellHamH, BellConf.DelayTime_0);
         }
-        if((little_Bell == 1 || Big_Bell == 1 ) && (little_Hummer != 1 || Big_Hummer != 1 ))
+        if((little_Hummer == 1 && Big_Hummer != 1 ) && (little_Bell != 1 || Big_Bell != 1 ))
         {
-            playMessaCenno(&Bell.IDBellA, BellConf.DelayTime_3);
-            playMessaCenno(&Bell.IDBellB, BellConf.DelayTime_3);
+            playBell(Bell->IDBellHamHH, BellConf.DelayTime_0);
         }
+        if((little_Bell == 1 && Big_Bell == 1 ) && (little_Hummer != 1 || Big_Hummer != 1 ))
+        {
+            playMessaDoppio(Bell->IDBellA,Bell->IDBellB, BellConf.DelayTime_3);
+        }
+        if((little_Bell != 1 && Big_Bell == 1 ) && (little_Hummer != 1 || Big_Hummer != 1 ))
+        {
+            playMessaCenno(Bell->IDBellA, BellConf.DelayTime_3);
+        }
+        if((little_Bell ==1 && Big_Bell != 1 ) && (little_Hummer != 1 || Big_Hummer != 1 ))
+        {
+            playMessaCenno(Bell->IDBellB, BellConf.DelayTime_3);
+        }
+
+
+
+
         /* prepare&send status output */
         index = 3;      /* start from offset 2 (payload offset init)*/
         /*header*/

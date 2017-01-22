@@ -33,17 +33,10 @@
 #include "GlueSocket.h"
 #include "ToolManager.h"
 
-int checkoperativeMode(const void *data, int len,int fd);
-
-void ConfInit(void);
-
+int checkoperativeMode(char *data, int *len,int fd);
+void ConfInit(struct BellConfigurationSt *BellConf);
 void daemonize();
 void signal_handler(int);
-
-struct BellConfigurationSt BellConf;
-
-/* global gpio hnd*/
-struct BellHnd Bell;
 
 static int mode = 1;
 
@@ -57,43 +50,49 @@ int main(int argc, char **argv)
 {
     int dev;
     int mode;
-    int length = 0;
+    int length;
     char buf[2000];
 
+    /* global gpio hnd*/
+    struct BellConfigurationSt BellConf;
+    struct BellHnd Bell;
 
+
+    //system("hwclock -w --localtime"); /* sync hw and local clock*/
 
     fprintf(stderr, "\n...Campanaro is started and run in background.");
 
     /*initialize daemonize process*/
-    //daemonize();
+    daemonize();
+    ConfInit(&BellConf);
 
     dev = RTCinit();
+    IoInit(&Bell);
 
-    IoInit(Bell);
     AlarmInit();
 
     init_tool_socket();
 
-    ConfInit();
 
     log_message(LOG_FILE, "*Started*");
 
     /*main loop*/
     while (1)
     {
-        mode = checkoperativeMode(buf,length,dev);
+        mode = checkoperativeMode(&buf,&length,dev);
 
-        printf("manual mode %u running\r\n",mode);
+        printf("operative mode %u running\r\n",mode);
 
         switch (mode)
         {
         case 1:
-            BellManager(dev,BellConf,Bell);
+            BellManager(dev,BellConf,&Bell);
             break;
 
         case 2:
             printf("manual mode running\r\n");
-            toolmng(buf,length,BellConf,Bell);
+            printf("length:%d buf[0]:%u \r\n",length,buf[0]);
+            toolmng(&buf,length,BellConf,&Bell);
             break;
 
         }
@@ -102,21 +101,21 @@ int main(int argc, char **argv)
     return 0;
 }
 
-int checkoperativeMode(const void *data, int len,int fd)
+int checkoperativeMode(char *data, int *len,int fd)
 {
-    int received;
     int retval;
-    int length = 0;
-    char *buf;
+    int lenght_;
+    char *bufffer;
 
-    buf = (char*) data;
+    bufffer = data;
 
-    received = ListenSocket(buf, length);
+    lenght_ = ListenSocket(bufffer);
 
-    if(received == 1)
+    if(lenght_ > 0)
     {
+        printf ("received %d byte\r\n",lenght_);
         /* start manual key*/
-        if(buf[0] == 0x22 && buf[1] == 0x22 && buf[2] == 0x22)
+        if(bufffer[0] == 0x22 && bufffer[1] == 0x22 && bufffer[2] == 0x22)
         {
             mode = 2;
             log_message(LOG_FILE, "Manual mode Requested");
@@ -141,92 +140,88 @@ int checkoperativeMode(const void *data, int len,int fd)
 
         }
         /* stop manual key*/
-        else if(buf[0] == 0x33 && buf[1] == 0x33 && buf[2] == 0x33)
+        else if(bufffer[0] == 0x33 && bufffer[1] == 0x33 && bufffer[2] == 0x33)
         {
             mode = 1;
             log_message(LOG_FILE, "Automatic mode Requested");
         }
-        length = len;
     }
+
+    printf("[DEBUG] len:%d data[0]:%u \r\n",lenght_,data[0]);
+
+    *len = lenght_;
 
     return mode;
 }
 
 
-void ConfInit()
+void ConfInit(struct BellConfigurationSt *BellConf)
 {
     /* transitional function*/
 
-    BellConf.DisableBell = 0;
+    BellConf->DisableBell = 0;
 
-    BellConf.HalfEnable = 1;
-    BellConf.QuarterEnable = 0;
-    BellConf.HoursEnable = 1;
+    BellConf->HalfEnable = 1;
+    BellConf->QuarterEnable = 0;
+    BellConf->HoursEnable = 1;
 
-    BellConf.RingFrom = 6;
-    BellConf.RingTo = 23;
+    BellConf->RingFrom = 8;
+    BellConf->RingTo = 22;
 
     /* deley between ring*/
-    BellConf.DelayTime_0 = 1; /* delay in on - off  when ring Hours */
-    BellConf.DelayTime_1 = 30; /* delay in on - off  when ring Messa */
-    BellConf.DelayTime_2 = 30;  /* delay in on - off  when ring Cenno -15 */
-    BellConf.DelayTime_3 = 30; /* delay in on - off  when ring Cenno -30 */
-
-    /* lunedì */
-    BellConf.Day[1].nEvent = 2;
-
-    BellConf.Day[1].messa[0].tm_hour = 14;
-    BellConf.Day[1].messa[0].tm_min = 00;
-    BellConf.Day[1].messa[0].tm_sec = 00;
-
-    BellConf.Day[1].messa[1].tm_hour = 18;
-    BellConf.Day[1].messa[1].tm_min = 00;
-    BellConf.Day[1].messa[1].tm_sec = 00;
-
-    /* martedì */
-    BellConf.Day[2].nEvent = 2;
-
-    BellConf.Day[2].messa[0].tm_hour = 13;
-    BellConf.Day[2].messa[0].tm_min = 00;
-    BellConf.Day[2].messa[0].tm_sec = 00;
-
-    BellConf.Day[2].messa[1].tm_hour = 18;
-    BellConf.Day[2].messa[1].tm_min = 00;
-    BellConf.Day[2].messa[1].tm_sec = 00;
-
-    /* ven */
-    BellConf.Day[5].nEvent = 2;
-
-    BellConf.Day[5].messa[0].tm_hour = 13;
-    BellConf.Day[5].messa[0].tm_min = 00;
-    BellConf.Day[5].messa[0].tm_sec = 00;
-
-    BellConf.Day[5].messa[1].tm_hour = 18;
-    BellConf.Day[5].messa[1].tm_min = 00;
-    BellConf.Day[5].messa[1].tm_sec = 00;
-
-    /* Sab */
-    BellConf.Day[6].nEvent = 2;
-
-    BellConf.Day[6].messa[0].tm_hour = 18;
-    BellConf.Day[6].messa[0].tm_min = 00;
-    BellConf.Day[6].messa[0].tm_sec = 00;
-
-    BellConf.Day[6].messa[1].tm_hour =19 ;
-    BellConf.Day[6].messa[1].tm_min = 00;
-    BellConf.Day[6].messa[1].tm_sec = 00;
+    BellConf->DelayTime_0 = 300000; /* uSec delay in on - off  when ring Hours */
+    BellConf->DelayTime_1 = 50; /*  uSec delay in on - off  when ring Messa */
+    BellConf->DelayTime_2 = 30;  /* uSec delay in on - off  when ring Cenno -30 */
+    BellConf->DelayTime_3 = 30; /*  uSec delay in on - off  when ring Doppio -60 */
 
     /* dom */
-    BellConf.Day[7].nEvent = 2;
+    BellConf->Day[0].nEvent = 1;
 
-    BellConf.Day[7].messa[0].tm_hour = 10;
-    BellConf.Day[7].messa[0].tm_min = 30;
-    BellConf.Day[7].messa[0].tm_sec = 00;
+    BellConf->Day[0].messa[0].tm_hour = 10;
+    BellConf->Day[0].messa[0].tm_min = 30;
+    BellConf->Day[0].messa[0].tm_sec = 00;
 
-    BellConf.Day[7].messa[1].tm_hour = 17;
-    BellConf.Day[7].messa[1].tm_min = 00;
-    BellConf.Day[7].messa[1].tm_sec = 00;
+    /* lunedì */
+    BellConf->Day[1].nEvent = 1;
 
+    BellConf->Day[1].messa[0].tm_hour = 18;
+    BellConf->Day[1].messa[0].tm_min = 00;
+    BellConf->Day[1].messa[0].tm_sec = 00;
+
+    /* martedì */
+    BellConf->Day[2].nEvent = 1;
+
+    BellConf->Day[2].messa[0].tm_hour = 18;
+    BellConf->Day[2].messa[0].tm_min = 00;
+    BellConf->Day[3].messa[0].tm_sec = 00;
+
+    /* mercoledì */
+    BellConf->Day[3].nEvent = 1;
+
+    BellConf->Day[3].messa[0].tm_hour = 18;
+    BellConf->Day[3].messa[0].tm_min = 00;
+    BellConf->Day[3].messa[0].tm_sec = 00;
+
+    /* giovedì */
+    BellConf->Day[4].nEvent = 1;
+
+    BellConf->Day[4].messa[0].tm_hour = 18;
+    BellConf->Day[4].messa[0].tm_min = 00;
+    BellConf->Day[4].messa[0].tm_sec = 00;
+
+    /* ven */
+    BellConf->Day[5].nEvent = 1;
+
+    BellConf->Day[5].messa[0].tm_hour = 18;
+    BellConf->Day[5].messa[0].tm_min = 00;
+    BellConf->Day[5].messa[0].tm_sec = 00;
+
+    /* Sab */
+    BellConf->Day[6].nEvent = 1;
+
+    BellConf->Day[6].messa[0].tm_hour = 18;
+    BellConf->Day[6].messa[0].tm_min = 00;
+    BellConf->Day[6].messa[0].tm_sec = 00;
 
 
 }

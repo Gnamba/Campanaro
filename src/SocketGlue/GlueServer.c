@@ -19,7 +19,7 @@
 
 #include    "GlueSocket.h"
 
-#define LOCAL_IP      "192.168.0.2"
+#define LOCAL_IP      "192.168.0.12"
 #define TOOL_PORT     10000
 
 void init_tool_socket(void)
@@ -63,10 +63,11 @@ void init_tool_socket(void)
     fprintf(stderr,"Socket initialization ok \n");
 }
 
-int ListenSocket(const void *data, int len)
+int ListenSocket(const void *data)
 {
     int nsocks;
     int res;
+    int length;
     struct timeval tv;
     fd_set readfds;
 
@@ -94,12 +95,12 @@ int ListenSocket(const void *data, int len)
     /* listen on udp socket for tool connection*/
     if (FD_ISSET (tool.fd, &readfds))
     {
-        int length = recvfrom (tool.fd, buf, sizeof (buf), 0, (struct sockaddr *)&tool.dst, &tool.addr_len);
+        length = recvfrom (tool.fd, buf, MAX_MSG_SIZE, 0, (struct sockaddr *)&tool.dst, &tool.addr_len);
 
         if (length > 0)
         {
-            fprintf(stderr, "\n...received tool message.");
-            res = 1;
+            fprintf(stderr, "\n...received tool message with len:%d.\r\n",length);
+            res = length;
         }
 
     }

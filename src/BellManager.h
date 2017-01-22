@@ -66,16 +66,16 @@ struct rtc_time setNextQuarterToHourAlarm(struct rtc_time rtc_tm);
 struct rtc_time setNextHalfHourAlarm(struct rtc_time rtc_tm);
 struct rtc_time setNextHourAlarm(struct rtc_time rtc_tm);
 
-void BellManager(int, struct BellConfigurationSt,struct BellHnd Bell);
+void BellManager(int, struct BellConfigurationSt,struct BellHnd *Bell);
 int  RTCinit(void);
 void AlarmInit(void);
-void IoInit(struct BellHnd Bell);
+void IoInit(struct BellHnd *Bell);
 
-void playBell(int*, unsigned char );
-void playMessa(int*, int*, int );
+void playBell(int*, int );
+void playMessa(int*, int );
 void playMessaCenno(int* , int );
 
-int CheckMessa(struct rtc_time,struct BellConfigurationSt,struct BellHnd Bell);
+int CheckMessa(struct rtc_time *,struct BellConfigurationSt,struct BellHnd *Bell);
 void SetAlarm(int);
 void UnSetAlarm(int);
 
